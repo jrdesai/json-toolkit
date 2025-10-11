@@ -60,22 +60,7 @@ const JsonFormatter = () => {
     }
   };
 
-  // Helper function to validate JSON syntax
-  const validateJsonSyntax = (jsonString) => {
-    try {
-      JSON.parse(jsonString);
-      return { isValid: true, error: null };
-    } catch (error) {
-      return { 
-        isValid: false, 
-        error: {
-          message: error.message,
-          line: error.message.match(/position (\d+)/)?.[1] || 'unknown',
-          type: 'syntax'
-        }
-      };
-    }
-  };
+  // Removed frontend validation - backend handles all validation
 
   // Helper function to set error with type
   const setErrorWithType = (message, type = 'api') => {
@@ -100,30 +85,20 @@ const JsonFormatter = () => {
       return;
     }
 
-    // Validate JSON syntax first
-    const validation = validateJsonSyntax(inputJson);
-    if (!validation.isValid) {
-      setErrorWithType(
-        `Invalid JSON syntax: ${validation.error.message}`,
-        'syntax'
-      );
-      return;
-    }
-
     setLoading(true);
 
     try {
-      // Parse the input to validate it's valid JSON
-      const parsedJson = JSON.parse(inputJson);
+      // Send raw JSON string to backend - let backend handle validation
+      const jsonData = inputJson.trim();
       
       if (actionType === 'format') {
         // Send to format endpoint
-        const response = await axios.post('http://localhost:8000/format', parsedJson);
+        const response = await axios.post('http://localhost:8000/format', jsonData);
         setConvertedOutput(response.data.formatted_json);
         message.success('JSON formatted successfully!');
       } else {
         // Send to convert endpoint with format parameter
-        const response = await axios.post(`http://localhost:8000/convert?format=${outputFormat}`, parsedJson);
+        const response = await axios.post(`http://localhost:8000/convert?format=${outputFormat}`, jsonData);
         setConvertedOutput(response.data.converted_data);
         message.success(`${outputFormat.toUpperCase()} conversion successful!`);
       }
@@ -133,24 +108,35 @@ const JsonFormatter = () => {
       
       if (err.response?.status === 422) {
         // Validation error from backend
-        errorMessage = `Invalid data format: ${err.response.data.detail}`;
+        const errorDetail = err.response.data.detail;
+        if (typeof errorDetail === 'object' && errorDetail.message) {
+          errorMessage = `Invalid JSON: ${errorDetail.message}`;
+        } else {
+          errorMessage = `Invalid JSON: ${errorDetail}`;
+        }
         errorType = 'validation';
       } else if (err.response?.status === 500) {
         // Server error
-        errorMessage = `Server error: ${err.response.data.detail || 'Internal server error'}`;
+        const errorDetail = err.response.data.detail;
+        if (typeof errorDetail === 'object' && errorDetail.message) {
+          errorMessage = `Server error: ${errorDetail.message}`;
+        } else {
+          errorMessage = `Server error: ${errorDetail || 'Internal server error'}`;
+        }
         errorType = 'api';
       } else if (err.response?.data?.detail) {
         // Other API errors
-        errorMessage = `API Error: ${err.response.data.detail}`;
+        const errorDetail = err.response.data.detail;
+        if (typeof errorDetail === 'object' && errorDetail.message) {
+          errorMessage = `API Error: ${errorDetail.message}`;
+        } else {
+          errorMessage = `API Error: ${errorDetail}`;
+        }
         errorType = 'api';
       } else if (err.code === 'NETWORK_ERROR' || err.message.includes('Network Error')) {
         // Network error
         errorMessage = 'Network error: Unable to connect to the server. Please check your connection.';
         errorType = 'network';
-      } else if (err instanceof SyntaxError) {
-        // JSON parsing error (shouldn't happen due to pre-validation)
-        errorMessage = 'Invalid JSON format. Please check your input.';
-        errorType = 'syntax';
       } else {
         // Generic error
         errorMessage = `An unexpected error occurred while ${actionType === 'format' ? 'formatting' : 'converting'} JSON.`;
@@ -159,8 +145,8 @@ const JsonFormatter = () => {
       
       setErrorWithType(errorMessage, errorType);
       
-      // Show toast notification for non-syntax errors
-      if (errorType !== 'syntax') {
+      // Show toast notification for non-validation errors
+      if (errorType !== 'validation') {
         message.error({
           content: (
             <div>
@@ -232,24 +218,13 @@ const JsonFormatter = () => {
     }
   };
 
-  // Real-time JSON validation
+  // Simplified input change handler - no frontend validation
   const handleInputChange = (value) => {
     setInputJson(value);
     
     // Clear errors when user starts typing
-    if (error && errorType === 'syntax') {
+    if (error && errorType === 'validation') {
       clearErrors();
-    }
-    
-    // Real-time validation for non-empty input
-    if (value.trim() && value.trim().length > 10) {
-      const validation = validateJsonSyntax(value);
-      if (!validation.isValid) {
-        setErrorWithType(
-          `Invalid JSON syntax: ${validation.error.message}`,
-          'syntax'
-        );
-      }
     }
   };
 
