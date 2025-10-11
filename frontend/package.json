@@ -4,10 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --port 5173 --host",
+    "dev:force": "vite --port 5173 --host --force",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "stop": "pkill -f vite || true"
   },
   "dependencies": {
     "@ant-design/icons": "^6.1.0",
