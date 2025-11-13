@@ -11,6 +11,7 @@ import {
   Col, 
   Space,
   Select,
+  Input,
   message 
 } from 'antd';
 import { 
@@ -25,10 +26,13 @@ const { Content } = Layout;
 const JsonFormatter = () => {
   const [inputJson, setInputJson] = useState('');
   const [convertedOutput, setConvertedOutput] = useState('');
-  const [actionType, setActionType] = useState('format'); // 'format' or 'convert'
+  const [actionType, setActionType] = useState('format'); // 'format', 'convert', or 'query'
   const [outputFormat, setOutputFormat] = useState('xml'); // Default to xml for convert
+  const [jsonPath, setJsonPath] = useState(''); // JSONPath expression for query
+  const [queryResultCount, setQueryResultCount] = useState(0); // Number of query results
   const [error, setError] = useState('');
   const [errorType, setErrorType] = useState(''); // 'syntax', 'api', 'network', 'validation'
+  const [errorDetails, setErrorDetails] = useState(null); // Detailed error info (line, column, snippet, etc.)
   const [loading, setLoading] = useState(false);
   const [errorVisible, setErrorVisible] = useState(false);
 
@@ -63,9 +67,10 @@ const JsonFormatter = () => {
   // Removed frontend validation - backend handles all validation
 
   // Helper function to set error with type
-  const setErrorWithType = (message, type = 'api') => {
+  const setErrorWithType = (message, type = 'api', details = null) => {
     setError(message);
     setErrorType(type);
+    setErrorDetails(details);
     setErrorVisible(true);
   };
 
@@ -74,6 +79,7 @@ const JsonFormatter = () => {
     setErrorVisible(false);
     setError('');
     setErrorType('');
+    setErrorDetails(null);
   };
 
   const handleAction = async () => {
@@ -82,6 +88,12 @@ const JsonFormatter = () => {
     
     if (!inputJson.trim()) {
       setErrorWithType('Please enter JSON data to process', 'validation');
+      return;
+    }
+
+    // Validate JSONPath for query action
+    if (actionType === 'query' && !jsonPath.trim()) {
+      setErrorWithType('Please enter a JSONPath expression', 'validation');
       return;
     }
 
@@ -95,42 +107,103 @@ const JsonFormatter = () => {
         // Send to format endpoint
         const response = await axios.post('http://localhost:8000/format', jsonData);
         setConvertedOutput(response.data.formatted_json);
+        setQueryResultCount(0);
         message.success('JSON formatted successfully!');
+      } else if (actionType === 'query') {
+        // Parse JSON data for query endpoint
+        let parsedJson;
+        try {
+          parsedJson = JSON.parse(jsonData);
+        } catch (parseError) {
+          setErrorWithType('Invalid JSON: ' + parseError.message, 'validation');
+          setLoading(false);
+          return;
+        }
+        
+        // Send to query endpoint with JSONPath expression
+        const response = await axios.post('http://localhost:8000/query', {
+          root: parsedJson,
+          path: jsonPath.trim()
+        });
+        setConvertedOutput(response.data.formatted_results);
+        setQueryResultCount(response.data.count);
+        message.success(`Query completed! Found ${response.data.count} match${response.data.count !== 1 ? 'es' : ''}`);
       } else {
         // Send to convert endpoint with format parameter
         const response = await axios.post(`http://localhost:8000/convert?format=${outputFormat}`, jsonData);
         setConvertedOutput(response.data.converted_data);
+        setQueryResultCount(0);
         message.success(`${outputFormat.toUpperCase()} conversion successful!`);
       }
     } catch (err) {
+      // Log error for debugging
+      console.error('API Error:', err);
+      console.error('Error details:', {
+        message: err.message,
+        response: err.response?.data,
+        status: err.response?.status,
+        actionType
+      });
+      
       let errorMessage = '';
       let errorType = 'api';
       
       if (err.response?.status === 422) {
         // Validation error from backend
-        const errorDetail = err.response.data.detail;
-        if (typeof errorDetail === 'object' && errorDetail.message) {
-          errorMessage = `Invalid JSON: ${errorDetail.message}`;
+        const errorDetail = err.response.data?.detail;
+        if (typeof errorDetail === 'object') {
+          // Use formatted message if available, otherwise construct one
+          if (errorDetail.formatted_message) {
+            errorMessage = errorDetail.formatted_message;
+          } else if (errorDetail.message) {
+            // Build detailed message with line/column info if available
+            let msg = errorDetail.message;
+            if (errorDetail.line !== undefined) {
+              msg += `\n\nLocation: Line ${errorDetail.line}`;
+              if (errorDetail.column !== undefined) {
+                msg += `, Column ${errorDetail.column}`;
+              }
+            }
+            errorMessage = msg;
+          } else if (errorDetail.error) {
+            errorMessage = `${errorDetail.error}: ${errorDetail.message || 'Invalid input'}`;
+          } else {
+            errorMessage = JSON.stringify(errorDetail);
+          }
+          
+          // Store detailed error information
+          const details = {
+            line: errorDetail.line,
+            column: errorDetail.column,
+            position: errorDetail.position,
+            snippet: errorDetail.snippet,
+            path: errorDetail.path,
+            formatted_message: errorDetail.formatted_message
+          };
+          setErrorWithType(errorMessage, 'validation', details);
+          return; // Early return since we set the error above
+        } else if (errorDetail) {
+          errorMessage = String(errorDetail);
         } else {
-          errorMessage = `Invalid JSON: ${errorDetail}`;
+          errorMessage = 'Validation error: Invalid input';
         }
         errorType = 'validation';
       } else if (err.response?.status === 500) {
         // Server error
-        const errorDetail = err.response.data.detail;
-        if (typeof errorDetail === 'object' && errorDetail.message) {
-          errorMessage = `Server error: ${errorDetail.message}`;
+        const errorDetail = err.response.data?.detail;
+        if (typeof errorDetail === 'object') {
+          errorMessage = errorDetail.message || errorDetail.error || 'Internal server error';
         } else {
-          errorMessage = `Server error: ${errorDetail || 'Internal server error'}`;
+          errorMessage = errorDetail || 'Internal server error';
         }
         errorType = 'api';
       } else if (err.response?.data?.detail) {
         // Other API errors
         const errorDetail = err.response.data.detail;
-        if (typeof errorDetail === 'object' && errorDetail.message) {
-          errorMessage = `API Error: ${errorDetail.message}`;
+        if (typeof errorDetail === 'object') {
+          errorMessage = errorDetail.message || errorDetail.error || 'API Error';
         } else {
-          errorMessage = `API Error: ${errorDetail}`;
+          errorMessage = String(errorDetail);
         }
         errorType = 'api';
       } else if (err.code === 'NETWORK_ERROR' || err.message.includes('Network Error')) {
@@ -139,7 +212,8 @@ const JsonFormatter = () => {
         errorType = 'network';
       } else {
         // Generic error
-        errorMessage = `An unexpected error occurred while ${actionType === 'format' ? 'formatting' : 'converting'} JSON.`;
+        const actionVerb = actionType === 'format' ? 'formatting' : actionType === 'query' ? 'querying' : 'converting';
+        errorMessage = `An unexpected error occurred while ${actionVerb} JSON.`;
         errorType = 'api';
       }
       
@@ -168,6 +242,8 @@ const JsonFormatter = () => {
   const handleClear = () => {
     setInputJson('');
     setConvertedOutput('');
+    setJsonPath('');
+    setQueryResultCount(0);
     clearErrors();
     message.info('Cleared all content');
   };
@@ -267,7 +343,8 @@ const JsonFormatter = () => {
                       style={{ width: 120 }}
                       options={[
                         { value: 'format', label: 'Format' },
-                        { value: 'convert', label: 'Convert' }
+                        { value: 'convert', label: 'Convert' },
+                        { value: 'query', label: 'Query' }
                       ]}
                     />
                     {actionType === 'convert' && (
@@ -282,13 +359,25 @@ const JsonFormatter = () => {
                         ]}
                       />
                     )}
+                    {actionType === 'query' && (
+                      <Input
+                        id="jsonpath-input"
+                        name="jsonpath"
+                        placeholder="JSONPath (e.g., $.users[*].name)"
+                        value={jsonPath}
+                        onChange={(e) => setJsonPath(e.target.value)}
+                        style={{ width: 200 }}
+                        onPressEnter={handleAction}
+                        autoComplete="off"
+                      />
+                    )}
                     <Button 
                       type="primary" 
                       icon={<FormatPainterOutlined />}
                       onClick={handleAction}
                       loading={loading}
                     >
-                      {actionType === 'format' ? 'Format' : 'Convert'}
+                      {actionType === 'format' ? 'Format' : actionType === 'query' ? 'Query' : 'Convert'}
                     </Button>
                     <Button 
                       icon={<ClearOutlined />}
@@ -325,7 +414,11 @@ const JsonFormatter = () => {
             {/* Output Section */}
             <Col xs={24} lg={12}>
               <Card 
-                title={`Output (${actionType === 'format' ? 'JSON' : outputFormat.toUpperCase()})`}
+                title={
+                  actionType === 'query' 
+                    ? `Query Results${queryResultCount > 0 ? ` (${queryResultCount} match${queryResultCount !== 1 ? 'es' : ''})` : ''}`
+                    : `Output (${actionType === 'format' ? 'JSON' : outputFormat.toUpperCase()})`
+                }
                 extra={
                   convertedOutput && (
                     <Button 
@@ -341,7 +434,7 @@ const JsonFormatter = () => {
               >
                 <Editor
                   height="500px"
-                  language={getLanguageForFormat(actionType === 'format' ? 'json' : outputFormat)}
+                  language={getLanguageForFormat(actionType === 'format' || actionType === 'query' ? 'json' : outputFormat)}
                   value={convertedOutput}
                   theme="vs-dark"
                   options={{
@@ -367,13 +460,16 @@ const JsonFormatter = () => {
               top: '50%',
               left: '20px',
               transform: 'translateY(-50%)',
-              width: '350px',
-              maxHeight: '400px',
+              width: '450px',
+              maxHeight: '80vh',
               backgroundColor: 'white',
               border: `2px solid ${getErrorDisplayProps(errorType).color}`,
               borderRadius: '12px',
               boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
-              zIndex: 1000
+              zIndex: 1000,
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden'
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -429,7 +525,14 @@ const JsonFormatter = () => {
             </div>
 
             {/* Content */}
-            <div style={{ padding: '20px', maxHeight: '300px', overflow: 'auto' }}>
+            <div style={{ 
+              padding: '20px', 
+              flex: 1,
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              minHeight: 0
+            }}>
+              {/* Error Message */}
               <div style={{ 
                 fontFamily: 'Monaco, Menlo, "Ubuntu Mono", monospace',
                 fontSize: '13px',
@@ -439,10 +542,99 @@ const JsonFormatter = () => {
                 border: '1px solid #e9ecef',
                 marginBottom: '12px',
                 wordBreak: 'break-word',
-                lineHeight: '1.4'
+                overflowWrap: 'break-word',
+                lineHeight: '1.4',
+                whiteSpace: 'pre-wrap',
+                maxWidth: '100%',
+                overflow: 'hidden'
               }}>
                 {error}
               </div>
+
+              {/* Detailed Error Information */}
+              {errorDetails && (
+                <div style={{ marginBottom: '12px' }}>
+                  {/* Line and Column Info */}
+                  {(errorDetails.line !== undefined || errorDetails.column !== undefined) && (
+                    <div style={{
+                      fontSize: '12px',
+                      color: '#666',
+                      marginBottom: '8px',
+                      padding: '8px',
+                      backgroundColor: '#e7f3ff',
+                      borderRadius: '4px',
+                      border: '1px solid #b3d9ff',
+                      wordBreak: 'break-word',
+                      overflowWrap: 'break-word'
+                    }}>
+                      <strong>📍 Location:</strong>{' '}
+                      {errorDetails.line !== undefined && `Line ${errorDetails.line}`}
+                      {errorDetails.line !== undefined && errorDetails.column !== undefined && ', '}
+                      {errorDetails.column !== undefined && `Column ${errorDetails.column}`}
+                      {errorDetails.position !== undefined && ` (Position ${errorDetails.position})`}
+                    </div>
+                  )}
+
+                  {/* Code Snippet */}
+                  {errorDetails.snippet && (
+                    <div style={{
+                      fontSize: '11px',
+                      fontFamily: 'Monaco, Menlo, "Ubuntu Mono", monospace',
+                      backgroundColor: '#2d2d2d',
+                      color: '#f8f8f2',
+                      padding: '12px',
+                      borderRadius: '6px',
+                      border: '1px solid #444',
+                      marginBottom: '8px',
+                      overflowX: 'auto',
+                      overflowY: 'auto',
+                      maxHeight: '200px',
+                      whiteSpace: 'pre',
+                      lineHeight: '1.5',
+                      wordBreak: 'break-all',
+                      maxWidth: '100%'
+                    }}>
+                      {errorDetails.snippet.split('\n').map((line, idx) => (
+                        <div key={idx} style={{
+                          color: line.startsWith('>>>') ? '#ff6b6b' : '#f8f8f2',
+                          marginBottom: line.startsWith('^') ? '4px' : '0',
+                          minWidth: 'max-content'
+                        }}>
+                          {line}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* JSONPath Info */}
+                  {errorDetails.path && (
+                    <div style={{
+                      fontSize: '12px',
+                      color: '#666',
+                      marginBottom: '8px',
+                      padding: '8px',
+                      backgroundColor: '#fff3cd',
+                      borderRadius: '4px',
+                      border: '1px solid #ffeaa7',
+                      wordBreak: 'break-word',
+                      overflowWrap: 'break-word'
+                    }}>
+                      <strong>🔍 JSONPath:</strong>{' '}
+                      <code style={{ 
+                        backgroundColor: '#f0f0f0', 
+                        padding: '2px 4px', 
+                        borderRadius: '3px',
+                        wordBreak: 'break-all',
+                        overflowWrap: 'break-word',
+                        display: 'inline-block',
+                        maxWidth: '100%'
+                      }}>
+                        {errorDetails.path}
+                      </code>
+                    </div>
+                  )}
+                </div>
+              )}
               
               {errorType === 'syntax' && (
                 <div style={{ 

@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import time
 from app.format_routes import router as format_router
 from app.convert_routes import router as convert_router
+from app.query_routes import router as query_router
 from app.logging_config import logger
 
 app = FastAPI(title="JSON Toolkit", description="Professional JSON editing, formatting, and conversion tools")
@@ -39,6 +40,7 @@ app.add_middleware(
 
 app.include_router(format_router)
 app.include_router(convert_router)
+app.include_router(query_router)
 
 @app.get("/")
 def read_root():

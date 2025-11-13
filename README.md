@@ -12,6 +12,7 @@ A professional JSON editing, formatting, and conversion tool built with React an
 ### 🔧 **Core Functionality**
 - **JSON Formatting**: Beautify and format JSON with proper indentation
 - **Multi-Format Conversion**: Convert JSON to XML, CSV, and YAML
+- **JSONPath Query**: Extract specific data using JSONPath expressions
 - **Real-time Validation**: Instant JSON syntax validation with error highlighting
 - **Enhanced Error Handling**: Categorized error messages with helpful tips
 
@@ -25,6 +26,7 @@ A professional JSON editing, formatting, and conversion tool built with React an
 ### 🚀 **Advanced Features**
 - **Nested Object Flattening**: CSV conversion with dot notation (e.g., `address.street`)
 - **Array Support**: Handle JSON arrays for CSV conversion
+- **JSONPath Querying**: Extract data using powerful JSONPath expressions (e.g., `$.users[*].name`, `$..address`)
 - **Copy to Clipboard**: One-click copying of formatted/converted data
 - **Example JSON**: Built-in examples to get started quickly
 
@@ -47,6 +49,7 @@ A professional JSON editing, formatting, and conversion tool built with React an
 - **PyYAML** - YAML parsing and generation
 - **dicttoxml** - Dictionary to XML conversion
 - **Pandas** - Data manipulation for CSV conversion
+- **jsonpath-ng** - JSONPath expression parsing and evaluation
 
 ## 📦 Installation
 
@@ -166,6 +169,39 @@ database:
   name: mydb
 ```
 
+### JSONPath Query
+```json
+{
+  "store": {
+    "book": [
+      {"title": "Book 1", "price": 10},
+      {"title": "Book 2", "price": 15}
+    ],
+    "users": [
+      {"name": "John", "age": 30},
+      {"name": "Jane", "age": 25}
+    ]
+  }
+}
+```
+**Query:** `$.store.users[*].name`
+**Output:**
+```json
+[
+  "John",
+  "Jane"
+]
+```
+
+**Query:** `$..price`
+**Output:**
+```json
+[
+  10,
+  15
+]
+```
+
 ## 🔧 API Endpoints
 
 ### Format JSON
@@ -196,6 +232,39 @@ Content-Type: application/json
 - `csv` - CSV format
 - `yaml` - YAML format
 
+### Query JSON with JSONPath
+```http
+POST /query
+Content-Type: application/json
+
+{
+  "root": {
+    "users": [
+      {"name": "John", "age": 30},
+      {"name": "Jane", "age": 25}
+    ]
+  },
+  "path": "$.users[*].name"
+}
+```
+
+**Response:**
+```json
+{
+  "results": ["John", "Jane"],
+  "formatted_results": "[\n  \"John\",\n  \"Jane\"\n]",
+  "count": 2,
+  "path": "$.users[*].name"
+}
+```
+
+**Common JSONPath expressions:**
+- `$.users[*].name` - Get all names from users array
+- `$..address` - Get all address fields recursively
+- `$.store.book[?(@.price < 10)]` - Filter books by price
+- `$[*]` - Get all elements in root array
+- `$.users[0]` - Get first user
+
 ## 🎯 Error Handling
 
 The application provides comprehensive error handling with:
@@ -221,8 +290,10 @@ json-toolkit/
 │   ├── models.py                 # Pydantic models
 │   ├── format_routes.py          # JSON formatting endpoints
 │   ├── convert_routes.py         # Conversion endpoints
-│   ├── format_utils.py           # JSON formatting utilities
-│   └── convert_utils.py          # Conversion utilities
+│   ├── query_routes.py           # JSONPath query endpoints
+│   ├── format_utils.py            # JSON formatting utilities
+│   ├── convert_utils.py           # Conversion utilities
+│   └── query_utils.py             # JSONPath query utilities
 ├── frontend/                     # React frontend
 │   ├── src/
 │   │   ├── components/

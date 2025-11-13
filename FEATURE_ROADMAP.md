@@ -3,6 +3,7 @@
 ## Current Features
 - JSON formatting with proper indentation
 - Multi-format conversion (JSON → XML, CSV, YAML)
+- JSONPath query functionality for extracting specific data
 - Real-time JSON validation with error highlighting
 - Monaco Editor integration with syntax highlighting
 - Responsive design with dark theme
@@ -13,7 +14,7 @@
 
 ### 1. **JSON Processing & Analysis**
 - **JSON Schema Validation**: Validate JSON against JSON Schema specifications
-- **JSON Path Query**: Extract specific data using JSONPath expressions
+- **JSON Path Query**: Extract specific data using JSONPath expressions ✅ **COMPLETED**
 - **JSON Diff**: Compare two JSON objects and highlight differences
 - **JSON Merge**: Merge multiple JSON objects intelligently
 - **JSON Minification**: Remove whitespace and compress JSON
@@ -112,7 +113,7 @@
 
 ### Phase 2 (Enhanced Functionality)
 1. **JSON Schema Validation** - Validate against schemas
-2. **JSON Path Query** - Extract data using JSONPath
+2. **JSON Path Query** - Extract data using JSONPath ✅ **COMPLETED**
 3. **JSON Diff** - Compare two JSON objects
 4. **TOML Support** - Add TOML conversion
 5. **CLI Advanced Commands** - Validate, diff, merge commands
