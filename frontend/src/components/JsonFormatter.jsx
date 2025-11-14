@@ -31,6 +31,7 @@ import Footer from './Footer';
 import { isValidJson } from '../utils/jsonUtils';
 import { useTheme } from '../contexts/ThemeContext';
 import { calculateTextStats } from '../utils/textStats';
+import API_BASE_URL from '../config/api';
 
 const { Title, Text } = Typography;
 const { Content } = Layout;
@@ -144,7 +145,7 @@ const JsonFormatter = () => {
       
       if (actionType === 'format') {
         // Send to format endpoint
-        const response = await axios.post('http://localhost:8000/format', jsonData);
+        const response = await axios.post(`${API_BASE_URL}/format`, jsonData);
         setConvertedOutput(response.data.formatted_json);
         setQueryResultCount(0);
         setOutputViewMode('editor'); // Reset to editor view for formatted output
@@ -161,7 +162,7 @@ const JsonFormatter = () => {
         }
         
         // Send to query endpoint with JSONPath expression
-        const response = await axios.post('http://localhost:8000/query', {
+        const response = await axios.post(`${API_BASE_URL}/query`, {
           root: parsedJson,
           path: jsonPath.trim()
         });
@@ -171,7 +172,7 @@ const JsonFormatter = () => {
         message.success(`Query completed! Found ${response.data.count} match${response.data.count !== 1 ? 'es' : ''}`);
       } else {
         // Send to convert endpoint with format parameter
-        const response = await axios.post(`http://localhost:8000/convert?format=${outputFormat}`, jsonData);
+        const response = await axios.post(`${API_BASE_URL}/convert?format=${outputFormat}`, jsonData);
         setConvertedOutput(response.data.converted_data);
         setQueryResultCount(0);
         setOutputViewMode('editor'); // Always use editor for non-JSON formats
