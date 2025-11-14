@@ -2,8 +2,10 @@ import React, { useMemo, useState, useCallback, memo, useRef } from 'react';
 import { Tree, message, Button, Space } from 'antd';
 import { CopyOutlined } from '@ant-design/icons';
 import { parseJsonSafely, getJsonValueType } from '../utils/jsonUtils';
+import { useTheme } from '../contexts/ThemeContext';
 
 const JsonTreeView = memo(({ jsonString, onChange, readOnly = false }) => {
+  const { isDark } = useTheme();
   const [expandedKeys, setExpandedKeys] = useState([]);
   const [selectedKeys, setSelectedKeys] = useState([]);
 
@@ -236,24 +238,28 @@ const JsonTreeView = memo(({ jsonString, onChange, readOnly = false }) => {
     }
   }, [jsonData]);
 
+  const bgColor = isDark ? '#1e1e1e' : '#ffffff';
+  const textColor = isDark ? '#fff' : '#000';
+
   return (
     <div style={{ 
       height: 'calc(100vh - 280px)', 
       overflow: 'auto',
       padding: '16px',
-      backgroundColor: '#1e1e1e',
-      color: '#fff'
+      backgroundColor: bgColor,
+      color: textColor,
+      transition: 'background-color 0.3s ease, color 0.3s ease'
     }}>
       <style>{`
         /* Tree container styles */
         .ant-tree {
-          color: #fff !important;
+          color: ${textColor} !important;
           background: transparent !important;
         }
         
         /* Switcher (expand/collapse icon container) */
         .ant-tree-switcher {
-          color: #fff !important;
+          color: ${textColor} !important;
           background: transparent !important;
           width: 24px !important;
           height: 24px !important;
@@ -265,8 +271,8 @@ const JsonTreeView = memo(({ jsonString, onChange, readOnly = false }) => {
         .ant-tree-switcher-icon svg,
         .ant-tree-switcher .anticon,
         .ant-tree-switcher .anticon svg {
-          color: #fff !important;
-          fill: #fff !important;
+          color: ${textColor} !important;
+          fill: ${textColor} !important;
           font-size: 12px !important;
           opacity: 1 !important;
         }
@@ -276,8 +282,8 @@ const JsonTreeView = memo(({ jsonString, onChange, readOnly = false }) => {
         .ant-tree-switcher_close .anticon,
         .ant-tree-switcher_open .anticon svg,
         .ant-tree-switcher_close .anticon svg {
-          color: #fff !important;
-          fill: #fff !important;
+          color: ${textColor} !important;
+          fill: ${textColor} !important;
           opacity: 1 !important;
         }
         
@@ -288,38 +294,38 @@ const JsonTreeView = memo(({ jsonString, onChange, readOnly = false }) => {
         
         /* Node content */
         .ant-tree-node-content-wrapper {
-          color: #fff !important;
+          color: ${textColor} !important;
         }
         .ant-tree-node-content-wrapper:hover {
-          background-color: rgba(255, 255, 255, 0.1) !important;
+          background-color: ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)'} !important;
         }
         
         /* Tree node */
         .ant-tree-treenode {
-          color: #fff !important;
+          color: ${textColor} !important;
         }
         
         /* Icon element */
         .ant-tree-iconEle {
-          color: #fff !important;
+          color: ${textColor} !important;
         }
         .ant-tree-iconEle svg {
-          fill: #fff !important;
-          color: #fff !important;
+          fill: ${textColor} !important;
+          color: ${textColor} !important;
         }
         
-        /* Ensure all Ant Design icons in tree are white */
+        /* Ensure all Ant Design icons in tree are visible */
         .ant-tree .anticon {
-          color: #fff !important;
+          color: ${textColor} !important;
         }
         .ant-tree .anticon svg {
-          fill: #fff !important;
-          color: #fff !important;
+          fill: ${textColor} !important;
+          color: ${textColor} !important;
         }
         
         /* Line connector */
         .ant-tree-child-tree {
-          color: #fff !important;
+          color: ${textColor} !important;
         }
       `}</style>
       <Tree
@@ -338,7 +344,7 @@ const JsonTreeView = memo(({ jsonString, onChange, readOnly = false }) => {
           const { expanded } = props;
           return (
             <span style={{ 
-              color: '#fff', 
+              color: textColor, 
               fontSize: '12px',
               display: 'inline-block',
               width: '16px',
@@ -352,7 +358,7 @@ const JsonTreeView = memo(({ jsonString, onChange, readOnly = false }) => {
         }}
         style={{
           backgroundColor: 'transparent',
-          color: '#fff'
+          color: textColor
         }}
       />
     </div>

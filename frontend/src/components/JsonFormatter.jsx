@@ -20,18 +20,23 @@ import {
   CopyOutlined, 
   ClearOutlined, 
   FormatPainterOutlined,
-  UploadOutlined 
+  UploadOutlined,
+  SunOutlined,
+  MoonOutlined
 } from '@ant-design/icons';
 // Lazy load view components for code splitting
 const JsonTreeView = React.lazy(() => import('./JsonTreeView'));
 const JsonFormView = React.lazy(() => import('./JsonFormView'));
 import Footer from './Footer';
 import { isValidJson } from '../utils/jsonUtils';
+import { useTheme } from '../contexts/ThemeContext';
+import { calculateTextStats } from '../utils/textStats';
 
 const { Title, Text } = Typography;
 const { Content } = Layout;
 
 const JsonFormatter = () => {
+  const { theme, toggleTheme, isDark } = useTheme();
   const [inputJson, setInputJson] = useState('');
   const [convertedOutput, setConvertedOutput] = useState('');
   const [actionType, setActionType] = useState('format'); // 'format', 'convert', or 'query'
@@ -484,18 +489,43 @@ const JsonFormatter = () => {
   }
 }`;
 
+  // Get Monaco editor theme based on app theme
+  const monacoTheme = isDark ? 'vs-dark' : 'vs';
+
+  // Theme-aware background colors
+  const backgroundColor = isDark ? '#141414' : '#f5f5f5';
+  const cardBackground = isDark ? '#1f1f1f' : '#ffffff';
+  const textColor = isDark ? '#ffffff' : undefined;
+
+  // Calculate statistics for input and output
+  const inputStats = useMemo(() => calculateTextStats(inputJson), [inputJson]);
+  const outputStats = useMemo(() => calculateTextStats(convertedOutput), [convertedOutput]);
+
   return (
-    <Layout style={{ minHeight: '100vh', backgroundColor: '#f5f5f5' }}>
+    <Layout style={{ minHeight: '100vh', backgroundColor }}>
       <Content style={{ padding: '24px' }}>
         <div style={{ maxWidth: '1800px', margin: '0 auto' }}>
           {/* Header */}
-          <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-                  <Title level={1} style={{ color: '#1890ff', marginBottom: '8px' }}>
-                    JSON Toolkit
-                  </Title>
-                  <Text type="secondary" style={{ fontSize: '16px' }}>
-                    Professional JSON editing, formatting, and conversion tools
-                  </Text>
+          <div style={{ textAlign: 'center', marginBottom: '32px', position: 'relative' }}>
+            <Button
+              type="text"
+              icon={isDark ? <SunOutlined /> : <MoonOutlined />}
+              onClick={toggleTheme}
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                fontSize: '18px',
+                color: isDark ? '#fff' : '#000',
+              }}
+              title={`Switch to ${isDark ? 'light' : 'dark'} theme`}
+            />
+            <Title level={1} style={{ color: '#1890ff', marginBottom: '8px' }}>
+              JSON Toolkit
+            </Title>
+            <Text type="secondary" style={{ fontSize: '16px' }}>
+              Professional JSON editing, formatting, and conversion tools
+            </Text>
           </div>
 
           {/* Main Content */}
@@ -504,15 +534,30 @@ const JsonFormatter = () => {
             <Col xs={24} lg={10}>
               <Card 
                 title={
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                     <span>Input JSON</span>
-                    <Button
-                      icon={<UploadOutlined />}
-                      onClick={() => fileInputRef.current?.click()}
-                      size="small"
-                    >
-                      Upload File
-                    </Button>
+                    <Space size="small" split={<span style={{ color: isDark ? '#666' : '#d9d9d9' }}>|</span>}>
+                      {inputJson && (
+                        <>
+                          <Text type="secondary" style={{ fontSize: '12px' }}>
+                            {inputStats.characters.toLocaleString()} chars
+                          </Text>
+                          <Text type="secondary" style={{ fontSize: '12px' }}>
+                            {inputStats.lines} {inputStats.lines === 1 ? 'line' : 'lines'}
+                          </Text>
+                          <Text type="secondary" style={{ fontSize: '12px' }}>
+                            {inputStats.size}
+                          </Text>
+                        </>
+                      )}
+                      <Button
+                        icon={<UploadOutlined />}
+                        onClick={() => fileInputRef.current?.click()}
+                        size="small"
+                      >
+                        Upload File
+                      </Button>
+                    </Space>
                   </div>
                 }
                 style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
@@ -565,7 +610,7 @@ const JsonFormatter = () => {
                       language="json"
                       value={inputJson}
                       onChange={handleInputChange}
-                      theme="vs-dark"
+                      theme={monacoTheme}
                       options={{
                         lineNumbers: 'on',
                         minimap: { enabled: false },
@@ -665,14 +710,27 @@ const JsonFormatter = () => {
             <Col xs={24} lg={isDesktop ? 10 : 12}>
               <Card 
                 title={
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', flexWrap: 'wrap', gap: '8px' }}>
                     <span>
                       {actionType === 'query' 
                         ? `Query Results${queryResultCount > 0 ? ` (${queryResultCount} match${queryResultCount !== 1 ? 'es' : ''})` : ''}`
                         : `Output (${actionType === 'format' ? 'JSON' : outputFormat.toUpperCase()})`
                       }
                     </span>
-                    <Space>
+                    <Space size="small" split={<span style={{ color: isDark ? '#666' : '#d9d9d9' }}>|</span>}>
+                      {convertedOutput && (
+                        <>
+                          <Text type="secondary" style={{ fontSize: '12px' }}>
+                            {outputStats.characters.toLocaleString()} chars
+                          </Text>
+                          <Text type="secondary" style={{ fontSize: '12px' }}>
+                            {outputStats.lines} {outputStats.lines === 1 ? 'line' : 'lines'}
+                          </Text>
+                          <Text type="secondary" style={{ fontSize: '12px' }}>
+                            {outputStats.size}
+                          </Text>
+                        </>
+                      )}
                       {(actionType === 'format' || actionType === 'query') && (
                         <Select
                           value={outputViewMode}
@@ -711,7 +769,7 @@ const JsonFormatter = () => {
                             height="calc(100vh - 280px)"
                             language="json"
                             value={convertedOutput}
-                            theme="vs-dark"
+                            theme={monacoTheme}
                             options={{
                               readOnly: true,
                               lineNumbers: 'on',
@@ -747,7 +805,7 @@ const JsonFormatter = () => {
                         height="calc(100vh - 280px)"
                         language={getLanguageForFormat(outputFormat)}
                         value={convertedOutput}
-                        theme="vs-dark"
+                        theme={monacoTheme}
                         options={{
                           readOnly: true,
                           lineNumbers: 'on',
@@ -857,7 +915,7 @@ const JsonFormatter = () => {
               transform: 'translateY(-50%)',
               width: '450px',
               maxHeight: '80vh',
-              backgroundColor: 'white',
+              backgroundColor: isDark ? '#1f1f1f' : 'white',
               border: `2px solid ${getErrorDisplayProps(errorType).color}`,
               borderRadius: '12px',
               boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
@@ -907,12 +965,12 @@ const JsonFormatter = () => {
                   transition: 'all 0.2s ease'
                 }}
                 onMouseEnter={(e) => {
-                  e.target.style.backgroundColor = '#f5f5f5';
+                  e.target.style.backgroundColor = isDark ? '#2d2d2d' : '#f5f5f5';
                   e.target.style.color = '#ff4d4f';
                 }}
                 onMouseLeave={(e) => {
                   e.target.style.backgroundColor = 'transparent';
-                  e.target.style.color = '#999';
+                  e.target.style.color = isDark ? '#999' : '#999';
                 }}
               >
                 ×
@@ -931,10 +989,11 @@ const JsonFormatter = () => {
               <div style={{ 
                 fontFamily: 'Monaco, Menlo, "Ubuntu Mono", monospace',
                 fontSize: '13px',
-                backgroundColor: '#f8f9fa',
+                backgroundColor: isDark ? '#2d2d2d' : '#f8f9fa',
+                color: isDark ? '#fff' : '#000',
                 padding: '12px',
                 borderRadius: '6px',
-                border: '1px solid #e9ecef',
+                border: `1px solid ${isDark ? '#444' : '#e9ecef'}`,
                 marginBottom: '12px',
                 wordBreak: 'break-word',
                 overflowWrap: 'break-word',
@@ -953,12 +1012,12 @@ const JsonFormatter = () => {
                   {(errorDetails.line !== undefined || errorDetails.column !== undefined) && (
                     <div style={{
                       fontSize: '12px',
-                      color: '#666',
+                      color: isDark ? '#ccc' : '#666',
                       marginBottom: '8px',
                       padding: '8px',
-                      backgroundColor: '#e7f3ff',
+                      backgroundColor: isDark ? '#1a3a5c' : '#e7f3ff',
                       borderRadius: '4px',
-                      border: '1px solid #b3d9ff',
+                      border: `1px solid ${isDark ? '#2d4a6b' : '#b3d9ff'}`,
                       wordBreak: 'break-word',
                       overflowWrap: 'break-word'
                     }}>
@@ -1005,18 +1064,19 @@ const JsonFormatter = () => {
                   {errorDetails.path && (
                     <div style={{
                       fontSize: '12px',
-                      color: '#666',
+                      color: isDark ? '#ccc' : '#666',
                       marginBottom: '8px',
                       padding: '8px',
-                      backgroundColor: '#fff3cd',
+                      backgroundColor: isDark ? '#4a3a1a' : '#fff3cd',
                       borderRadius: '4px',
-                      border: '1px solid #ffeaa7',
+                      border: `1px solid ${isDark ? '#6b5a2d' : '#ffeaa7'}`,
                       wordBreak: 'break-word',
                       overflowWrap: 'break-word'
                     }}>
                       <strong>🔍 JSONPath:</strong>{' '}
                       <code style={{ 
-                        backgroundColor: '#f0f0f0', 
+                        backgroundColor: isDark ? '#2d2d2d' : '#f0f0f0',
+                        color: isDark ? '#fff' : '#000',
                         padding: '2px 4px', 
                         borderRadius: '3px',
                         wordBreak: 'break-all',
@@ -1034,11 +1094,11 @@ const JsonFormatter = () => {
               {errorType === 'syntax' && (
                 <div style={{ 
                   fontSize: '12px', 
-                  color: '#666', 
+                  color: isDark ? '#ccc' : '#666', 
                   fontStyle: 'italic',
                   padding: '8px 12px',
-                  backgroundColor: '#fff3cd',
-                  border: '1px solid #ffeaa7',
+                  backgroundColor: isDark ? '#4a3a1a' : '#fff3cd',
+                  border: `1px solid ${isDark ? '#6b5a2d' : '#ffeaa7'}`,
                   borderRadius: '4px',
                   marginBottom: '8px'
                 }}>
@@ -1048,11 +1108,11 @@ const JsonFormatter = () => {
               {errorType === 'network' && (
                 <div style={{ 
                   fontSize: '12px', 
-                  color: '#666', 
+                  color: isDark ? '#ccc' : '#666', 
                   fontStyle: 'italic',
                   padding: '8px 12px',
-                  backgroundColor: '#f8d7da',
-                  border: '1px solid #f5c6cb',
+                  backgroundColor: isDark ? '#4a1a1a' : '#f8d7da',
+                  border: `1px solid ${isDark ? '#6b2d2d' : '#f5c6cb'}`,
                   borderRadius: '4px',
                   marginBottom: '8px'
                 }}>
@@ -1062,11 +1122,11 @@ const JsonFormatter = () => {
               {errorType === 'validation' && (
                 <div style={{ 
                   fontSize: '12px', 
-                  color: '#666', 
+                  color: isDark ? '#ccc' : '#666', 
                   fontStyle: 'italic',
                   padding: '8px 12px',
-                  backgroundColor: '#fff3cd',
-                  border: '1px solid #ffeaa7',
+                  backgroundColor: isDark ? '#4a3a1a' : '#fff3cd',
+                  border: `1px solid ${isDark ? '#6b5a2d' : '#ffeaa7'}`,
                   borderRadius: '4px',
                   marginBottom: '8px'
                 }}>
@@ -1099,7 +1159,7 @@ const JsonFormatter = () => {
                     height="200px"
                     language="json"
                     value={exampleJson}
-                    theme="vs-dark"
+                    theme={monacoTheme}
                     options={{
                       readOnly: true,
                       lineNumbers: 'on',
