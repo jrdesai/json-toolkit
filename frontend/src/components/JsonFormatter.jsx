@@ -181,11 +181,14 @@ const JsonFormatter = () => {
     } catch (err) {
       // Log error for debugging
       console.error('API Error:', err);
+      console.error('API Base URL:', API_BASE_URL);
       console.error('Error details:', {
         message: err.message,
+        code: err.code,
         response: err.response?.data,
         status: err.response?.status,
-        actionType
+        actionType,
+        url: err.config?.url
       });
       
       let errorMessage = '';
@@ -249,9 +252,10 @@ const JsonFormatter = () => {
           errorMessage = String(errorDetail);
         }
         errorType = 'api';
-      } else if (err.code === 'NETWORK_ERROR' || err.message.includes('Network Error')) {
-        // Network error
-        errorMessage = 'Network error: Unable to connect to the server. Please check your connection.';
+      } else if (err.code === 'NETWORK_ERROR' || err.message.includes('Network Error') || err.code === 'ERR_NETWORK' || !err.response) {
+        // Network error - no response from server
+        const apiUrl = API_BASE_URL;
+        errorMessage = `Network error: Unable to connect to the server at ${apiUrl}. Please check:\n\n1. Backend server is running\n2. CORS is configured correctly\n3. API URL is set correctly (current: ${apiUrl})`;
         errorType = 'network';
       } else {
         // Generic error
