@@ -13,6 +13,8 @@ A professional JSON editing, formatting, and conversion tool built with React an
 - **JSON Formatting**: Beautify and format JSON with proper indentation
 - **Multi-Format Conversion**: Convert JSON to XML, CSV, and YAML
 - **JSONPath Query**: Extract specific data using JSONPath expressions
+- **Tree View**: Hierarchical visualization of JSON structure with expand/collapse
+- **Form View**: Editable form representation for intuitive JSON editing
 - **Real-time Validation**: Instant JSON syntax validation with error highlighting
 - **Enhanced Error Handling**: Categorized error messages with helpful tips
 
@@ -27,6 +29,9 @@ A professional JSON editing, formatting, and conversion tool built with React an
 - **Nested Object Flattening**: CSV conversion with dot notation (e.g., `address.street`)
 - **Array Support**: Handle JSON arrays for CSV conversion
 - **JSONPath Querying**: Extract data using powerful JSONPath expressions (e.g., `$.users[*].name`, `$..address`)
+- **Multiple View Modes**: Switch between Editor, Tree View, and Form View for different editing experiences
+- **Tree View Features**: Expand/collapse nodes, color-coded value types, click to copy values
+- **Form View Features**: Dynamic form generation, nested object support, array manipulation
 - **Copy to Clipboard**: One-click copying of formatted/converted data
 - **Example JSON**: Built-in examples to get started quickly
 
@@ -109,9 +114,10 @@ A professional JSON editing, formatting, and conversion tool built with React an
 1. **Start both servers** (backend on port 8000, frontend on port 5173)
 2. **Open the application** in your browser
 3. **Paste your JSON** into the input editor
-4. **Select output format** (JSON, XML, CSV, or YAML)
-5. **Click Convert** to transform your data
-6. **Copy the result** using the copy button
+4. **Choose a view mode** (Editor, Tree View, or Form View) from the dropdown
+5. **Select output format** (JSON, XML, CSV, or YAML)
+6. **Click Format/Convert/Query** to transform your data
+7. **Copy the result** using the copy button
 
 ## 📖 Usage Examples
 
@@ -265,6 +271,21 @@ Content-Type: application/json
 - `$[*]` - Get all elements in root array
 - `$.users[0]` - Get first user
 
+### Tree View
+Switch to **Tree View** to see your JSON in a hierarchical structure:
+- **Expand/Collapse**: Click nodes to expand or collapse nested objects and arrays
+- **Color Coding**: Different value types are color-coded (strings, numbers, booleans, objects, arrays)
+- **Copy Values**: Click on any node to copy its value to clipboard
+- **Auto-expand**: First 2 levels are automatically expanded for quick navigation
+
+### Form View
+Switch to **Form View** for an intuitive form-based editing experience:
+- **Dynamic Forms**: Forms are automatically generated from your JSON structure
+- **Nested Objects**: Use collapsible sections for nested objects
+- **Array Editing**: Add or remove items from arrays with dedicated controls
+- **Type-aware Inputs**: Different input types based on JSON value types (text, number, boolean)
+- **Real-time Sync**: Changes in form view automatically sync back to the editor
+
 ## 🎯 Error Handling
 
 The application provides comprehensive error handling with:
@@ -297,7 +318,11 @@ json-toolkit/
 ├── frontend/                     # React frontend
 │   ├── src/
 │   │   ├── components/
-│   │   │   └── JsonFormatter.jsx # Main component
+│   │   │   ├── JsonFormatter.jsx # Main component
+│   │   │   ├── JsonTreeView.jsx   # Tree view component
+│   │   │   └── JsonFormView.jsx   # Form view component
+│   │   ├── utils/
+│   │   │   └── jsonUtils.js       # JSON utility functions
 │   │   ├── App.jsx               # App component
 │   │   ├── App.css               # Styling and animations
 │   │   └── main.jsx              # Entry point

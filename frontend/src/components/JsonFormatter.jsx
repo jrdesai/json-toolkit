@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, Suspense } from 'react';
 import axios from 'axios';
-import Editor from '@monaco-editor/react';
+// Lazy load Monaco Editor for better initial load
+const Editor = React.lazy(() => import('@monaco-editor/react'));
 import { 
   Layout, 
   Card, 
@@ -12,13 +13,20 @@ import {
   Space,
   Select,
   Input,
+  Collapse,
   message 
 } from 'antd';
 import { 
   CopyOutlined, 
   ClearOutlined, 
-  FormatPainterOutlined 
+  FormatPainterOutlined,
+  UploadOutlined 
 } from '@ant-design/icons';
+// Lazy load view components for code splitting
+const JsonTreeView = React.lazy(() => import('./JsonTreeView'));
+const JsonFormView = React.lazy(() => import('./JsonFormView'));
+import Footer from './Footer';
+import { isValidJson } from '../utils/jsonUtils';
 
 const { Title, Text } = Typography;
 const { Content } = Layout;
@@ -35,26 +43,52 @@ const JsonFormatter = () => {
   const [errorDetails, setErrorDetails] = useState(null); // Detailed error info (line, column, snippet, etc.)
   const [loading, setLoading] = useState(false);
   const [errorVisible, setErrorVisible] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 992);
+  const [viewMode, setViewMode] = useState('editor'); // 'editor', 'tree', or 'form'
+  const [outputViewMode, setOutputViewMode] = useState('editor'); // View mode for output
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = React.useRef(null);
 
   // Click outside to close error panel
   useEffect(() => {
+    if (!errorVisible) return;
+
     const handleClickOutside = (event) => {
-      if (errorVisible && !event.target.closest('.floating-error-panel')) {
+      if (!event.target.closest('.floating-error-panel')) {
         clearErrors();
       }
     };
 
-    if (errorVisible) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-
+    document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [errorVisible]);
 
-  // Helper function to get Monaco language based on format
-  const getLanguageForFormat = (format) => {
+  // Handle window resize for responsive controls - throttled for performance
+  useEffect(() => {
+    const handleResize = () => {
+      setIsDesktop(window.innerWidth >= 992);
+    };
+
+    // Throttle resize events for better performance
+    let timeoutId;
+    const throttledResize = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(handleResize, 150);
+    };
+
+    window.addEventListener('resize', throttledResize);
+    handleResize(); // Initial check
+
+    return () => {
+      window.removeEventListener('resize', throttledResize);
+      clearTimeout(timeoutId);
+    };
+  }, []);
+
+  // Helper function to get Monaco language based on format - memoized
+  const getLanguageForFormat = useCallback((format) => {
     switch (format) {
       case 'json': return 'json';
       case 'xml': return 'xml';
@@ -62,7 +96,7 @@ const JsonFormatter = () => {
       case 'csv': return 'csv';
       default: return 'json';
     }
-  };
+  }, []);
 
   // Removed frontend validation - backend handles all validation
 
@@ -82,7 +116,7 @@ const JsonFormatter = () => {
     setErrorDetails(null);
   };
 
-  const handleAction = async () => {
+  const handleAction = useCallback(async () => {
     // Clear previous errors
     clearErrors();
     
@@ -108,6 +142,7 @@ const JsonFormatter = () => {
         const response = await axios.post('http://localhost:8000/format', jsonData);
         setConvertedOutput(response.data.formatted_json);
         setQueryResultCount(0);
+        setOutputViewMode('editor'); // Reset to editor view for formatted output
         message.success('JSON formatted successfully!');
       } else if (actionType === 'query') {
         // Parse JSON data for query endpoint
@@ -127,12 +162,14 @@ const JsonFormatter = () => {
         });
         setConvertedOutput(response.data.formatted_results);
         setQueryResultCount(response.data.count);
+        setOutputViewMode('editor'); // Reset to editor view for query results
         message.success(`Query completed! Found ${response.data.count} match${response.data.count !== 1 ? 'es' : ''}`);
       } else {
         // Send to convert endpoint with format parameter
         const response = await axios.post(`http://localhost:8000/convert?format=${outputFormat}`, jsonData);
         setConvertedOutput(response.data.converted_data);
         setQueryResultCount(0);
+        setOutputViewMode('editor'); // Always use editor for non-JSON formats
         message.success(`${outputFormat.toUpperCase()} conversion successful!`);
       }
     } catch (err) {
@@ -237,7 +274,7 @@ const JsonFormatter = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [actionType, inputJson, jsonPath, outputFormat]);
 
   const handleClear = () => {
     setInputJson('');
@@ -251,6 +288,11 @@ const JsonFormatter = () => {
   const handleCopy = () => {
     navigator.clipboard.writeText(convertedOutput);
     message.success('Copied to clipboard!');
+  };
+
+  const handleCopyExample = () => {
+    navigator.clipboard.writeText(exampleJson);
+    message.success('Example JSON copied to clipboard!');
   };
 
   // Helper function to get error icon and color based on error type
@@ -295,14 +337,141 @@ const JsonFormatter = () => {
   };
 
   // Simplified input change handler - no frontend validation
-  const handleInputChange = (value) => {
+  const handleInputChange = useCallback((value) => {
     setInputJson(value);
     
     // Clear errors when user starts typing
     if (error && errorType === 'validation') {
       clearErrors();
     }
+  }, [error, errorType]);
+
+  // Handle view mode change - validate JSON if switching to tree/form view
+  const handleViewModeChange = useCallback((mode) => {
+    if (mode === 'tree' || mode === 'form') {
+      if (!isValidJson(inputJson)) {
+        message.warning('Invalid JSON - Cannot switch to tree/form view');
+        return;
+      }
+    }
+    setViewMode(mode);
+  }, [inputJson]);
+
+  // Handle output view mode change
+  const handleOutputViewModeChange = useCallback((mode) => {
+    if (mode === 'tree' || mode === 'form') {
+      if (!isValidJson(convertedOutput)) {
+        message.warning('Invalid JSON - Cannot switch to tree/form view');
+        return;
+      }
+    }
+    setOutputViewMode(mode);
+  }, [convertedOutput]);
+
+  // Handle form/tree view changes - sync back to editor
+  const handleInputViewChange = useCallback((newJsonString) => {
+    setInputJson(newJsonString);
+  }, []);
+
+  // Reset view modes when clearing
+  const handleClearWithViews = () => {
+    handleClear();
+    setViewMode('editor');
+    setOutputViewMode('editor');
   };
+
+  // Read file content as text - memoized
+  const readFileContent = useCallback((file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        resolve(e.target.result);
+      };
+      reader.onerror = (e) => {
+        reject(new Error('Failed to read file'));
+      };
+      reader.readAsText(file);
+    });
+  }, []);
+
+  // Handle file upload - memoized to prevent recreation
+  const handleFileUpload = useCallback(async (file) => {
+    // Validate file type
+    if (!file.name.toLowerCase().endsWith('.json')) {
+      message.error('Please upload a JSON file (.json)');
+      return;
+    }
+
+    // Validate file size (max 10MB)
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (file.size > maxSize) {
+      message.error('File size exceeds 10MB limit');
+      return;
+    }
+
+    try {
+      const fileContent = await readFileContent(file);
+      
+      // Validate JSON
+      try {
+        JSON.parse(fileContent);
+      } catch (parseError) {
+        message.error('Invalid JSON file. Please check the file content.');
+        return;
+      }
+
+      setInputJson(fileContent);
+      message.success(`File "${file.name}" loaded successfully`);
+      
+      // Clear the file input to ensure privacy - file is not stored
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    } catch (error) {
+      message.error('Failed to read file: ' + error.message);
+    }
+  }, [readFileContent]);
+
+  // Handle file input change - memoized
+  const handleFileInputChange = useCallback((e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleFileUpload(file);
+    }
+  }, [handleFileUpload]);
+
+  // Drag and drop handlers - memoized for performance
+  const handleDragEnter = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  }, []);
+
+  const handleDragOver = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    const jsonFile = files.find(file => file.name.toLowerCase().endsWith('.json'));
+    
+    if (jsonFile) {
+      handleFileUpload(jsonFile);
+    } else {
+      message.error('Please drop a JSON file (.json)');
+    }
+  }, [handleFileUpload]);
 
   const exampleJson = `{
   "name": "John Doe",
@@ -318,7 +487,7 @@ const JsonFormatter = () => {
   return (
     <Layout style={{ minHeight: '100vh', backgroundColor: '#f5f5f5' }}>
       <Content style={{ padding: '24px' }}>
-        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+        <div style={{ maxWidth: '1800px', margin: '0 auto' }}>
           {/* Header */}
           <div style={{ textAlign: 'center', marginBottom: '32px' }}>
                   <Title level={1} style={{ color: '#1890ff', marginBottom: '8px' }}>
@@ -330,126 +499,352 @@ const JsonFormatter = () => {
           </div>
 
           {/* Main Content */}
-          <Row gutter={[24, 24]} style={{ marginBottom: '24px' }}>
+          <Row gutter={[16, 24]} align="stretch">
             {/* Input Section */}
-            <Col xs={24} lg={12}>
+            <Col xs={24} lg={10}>
               <Card 
-                title="Input JSON" 
-                extra={
-                  <Space>
+                title={
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Input JSON</span>
+                    <Button
+                      icon={<UploadOutlined />}
+                      onClick={() => fileInputRef.current?.click()}
+                      size="small"
+                    >
+                      Upload File
+                    </Button>
+                  </div>
+                }
+                style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
+                bodyStyle={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 0 }}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json"
+                  onChange={handleFileInputChange}
+                  style={{ display: 'none' }}
+                />
+                <div
+                  style={{
+                    position: 'relative',
+                    flex: 1,
+                    minHeight: 'calc(100vh - 280px)',
+                    border: isDragging ? '2px dashed #1890ff' : '2px dashed transparent',
+                    borderRadius: '4px',
+                    transition: 'border-color 0.3s',
+                    backgroundColor: isDragging ? 'rgba(24, 144, 255, 0.05)' : 'transparent'
+                  }}
+                  onDragEnter={handleDragEnter}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                >
+                  {isDragging && (
+                    <div style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: 'rgba(24, 144, 255, 0.1)',
+                      zIndex: 10,
+                      borderRadius: '4px'
+                    }}>
+                      <Text strong style={{ fontSize: '18px', color: '#1890ff' }}>
+                        Drop JSON file here
+                      </Text>
+                    </div>
+                  )}
+                  <Suspense fallback={<div style={{ padding: '20px', textAlign: 'center', color: '#999', height: 'calc(100vh - 280px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading editor...</div>}>
+                    <Editor
+                      height="calc(100vh - 280px)"
+                      language="json"
+                      value={inputJson}
+                      onChange={handleInputChange}
+                      theme="vs-dark"
+                      options={{
+                        lineNumbers: 'on',
+                        minimap: { enabled: false },
+                        scrollBeyondLastLine: false,
+                        fontSize: 14,
+                        automaticLayout: true,
+                        wordWrap: 'on',
+                        placeholder: 'Paste your JSON here or drag & drop a JSON file...',
+                      }}
+                    />
+                  </Suspense>
+                </div>
+              </Card>
+            </Col>
+
+            {/* Controls Section - Between Input and Output (Desktop) */}
+            {isDesktop && (
+            <Col xs={0} lg={4}>
+              <div style={{ 
+                display: 'flex', 
+                flexDirection: 'column',
+                justifyContent: 'flex-start',
+                alignItems: 'center',
+                height: '100%',
+                padding: '16px 8px 0 8px'
+              }}>
+                <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                  <div>
+                    <Text strong style={{ fontSize: '13px', marginBottom: '4px', display: 'block', color: '#1890ff' }}>Action</Text>
                     <Select 
                       value={actionType}
                       onChange={setActionType}
-                      style={{ width: 120 }}
+                      style={{ width: '100%', fontWeight: 'bold' }}
                       options={[
-                        { value: 'format', label: 'Format' },
-                        { value: 'convert', label: 'Convert' },
-                        { value: 'query', label: 'Query' }
+                        { value: 'format', label: <span style={{ fontWeight: 'bold' }}>Format</span> },
+                        { value: 'convert', label: <span style={{ fontWeight: 'bold' }}>Convert</span> },
+                        { value: 'query', label: <span style={{ fontWeight: 'bold' }}>Query</span> }
                       ]}
                     />
-                    {actionType === 'convert' && (
+                  </div>
+                  {actionType === 'convert' && (
+                    <div>
+                      <Text strong style={{ fontSize: '13px', marginBottom: '4px', display: 'block', color: '#1890ff' }}>Output Format</Text>
                       <Select 
                         value={outputFormat}
                         onChange={setOutputFormat}
-                        style={{ width: 100 }}
+                        style={{ width: '100%', fontWeight: 'bold' }}
                         options={[
-                          { value: 'xml', label: 'XML' },
-                          { value: 'csv', label: 'CSV' },
-                          { value: 'yaml', label: 'YAML' }
+                          { value: 'xml', label: <span style={{ fontWeight: 'bold' }}>XML</span> },
+                          { value: 'csv', label: <span style={{ fontWeight: 'bold' }}>CSV</span> },
+                          { value: 'yaml', label: <span style={{ fontWeight: 'bold' }}>YAML</span> }
                         ]}
                       />
-                    )}
-                    {actionType === 'query' && (
+                    </div>
+                  )}
+                  {actionType === 'query' && (
+                    <div>
+                      <Text strong style={{ fontSize: '13px', marginBottom: '4px', display: 'block', color: '#1890ff' }}>JSONPath</Text>
                       <Input
                         id="jsonpath-input"
                         name="jsonpath"
-                        placeholder="JSONPath (e.g., $.users[*].name)"
+                        placeholder="JSONPath"
                         value={jsonPath}
                         onChange={(e) => setJsonPath(e.target.value)}
-                        style={{ width: 200 }}
+                        style={{ width: '100%', fontWeight: 'bold' }}
                         onPressEnter={handleAction}
                         autoComplete="off"
                       />
+                    </div>
+                  )}
+                  <Button 
+                    type="primary" 
+                    icon={<FormatPainterOutlined />}
+                    onClick={handleAction}
+                    loading={loading}
+                    block
+                    size="large"
+                    style={{ fontWeight: 'bold', fontSize: '15px', height: '40px' }}
+                  >
+                    {actionType === 'format' ? 'Format' : actionType === 'query' ? 'Query' : 'Convert'}
+                  </Button>
+                  <Button 
+                    icon={<ClearOutlined />}
+                    onClick={handleClearWithViews}
+                    block
+                    size="large"
+                    style={{ fontWeight: 'bold', fontSize: '15px', height: '40px' }}
+                  >
+                    Clear
+                  </Button>
+                </Space>
+              </div>
+            </Col>
+            )}
+
+            {/* Output Section */}
+            <Col xs={24} lg={isDesktop ? 10 : 12}>
+              <Card 
+                title={
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                    <span>
+                      {actionType === 'query' 
+                        ? `Query Results${queryResultCount > 0 ? ` (${queryResultCount} match${queryResultCount !== 1 ? 'es' : ''})` : ''}`
+                        : `Output (${actionType === 'format' ? 'JSON' : outputFormat.toUpperCase()})`
+                      }
+                    </span>
+                    <Space>
+                      {(actionType === 'format' || actionType === 'query') && (
+                        <Select
+                          value={outputViewMode}
+                          onChange={handleOutputViewModeChange}
+                          size="middle"
+                          style={{ width: 140, fontWeight: 'bold' }}
+                          options={[
+                            { value: 'editor', label: <span style={{ fontWeight: 'bold' }}>Editor</span> },
+                            { value: 'tree', label: <span style={{ fontWeight: 'bold' }}>Tree View</span> },
+                            { value: 'form', label: <span style={{ fontWeight: 'bold' }}>Form View</span> }
+                          ]}
+                        />
+                      )}
+                      {convertedOutput && (
+                        <Button 
+                          type="default"
+                          icon={<CopyOutlined />}
+                          onClick={handleCopy}
+                          size="small"
+                        >
+                          Copy
+                        </Button>
+                      )}
+                    </Space>
+                  </div>
+                }
+                style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
+                bodyStyle={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 0 }}
+              >
+                <div style={{ position: 'relative', flex: 1, minHeight: 'calc(100vh - 280px)' }}>
+                  {(actionType === 'format' || actionType === 'query') ? (
+                    <>
+                      {outputViewMode === 'editor' && (
+                        <Suspense fallback={<div style={{ padding: '20px', textAlign: 'center', color: '#999', height: 'calc(100vh - 280px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading editor...</div>}>
+                          <Editor
+                            height="calc(100vh - 280px)"
+                            language="json"
+                            value={convertedOutput}
+                            theme="vs-dark"
+                            options={{
+                              readOnly: true,
+                              lineNumbers: 'on',
+                              minimap: { enabled: false },
+                              scrollBeyondLastLine: false,
+                              fontSize: 14,
+                              automaticLayout: true,
+                              wordWrap: 'on',
+                            }}
+                          />
+                        </Suspense>
+                      )}
+                      {outputViewMode === 'tree' && (
+                        <Suspense fallback={<div style={{ padding: '20px', textAlign: 'center', color: '#999' }}>Loading tree view...</div>}>
+                          <JsonTreeView
+                            jsonString={convertedOutput}
+                            readOnly={true}
+                          />
+                        </Suspense>
+                      )}
+                      {outputViewMode === 'form' && (
+                        <Suspense fallback={<div style={{ padding: '20px', textAlign: 'center', color: '#999' }}>Loading form view...</div>}>
+                          <JsonFormView
+                            jsonString={convertedOutput}
+                            readOnly={true}
+                          />
+                        </Suspense>
+                      )}
+                    </>
+                  ) : (
+                    <Suspense fallback={<div style={{ padding: '20px', textAlign: 'center', color: '#999', height: 'calc(100vh - 280px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading editor...</div>}>
+                      <Editor
+                        height="calc(100vh - 280px)"
+                        language={getLanguageForFormat(outputFormat)}
+                        value={convertedOutput}
+                        theme="vs-dark"
+                        options={{
+                          readOnly: true,
+                          lineNumbers: 'on',
+                          minimap: { enabled: false },
+                          scrollBeyondLastLine: false,
+                          fontSize: 14,
+                          automaticLayout: true,
+                          wordWrap: 'on',
+                        }}
+                      />
+                    </Suspense>
+                  )}
+                </div>
+              </Card>
+            </Col>
+          </Row>
+
+            {/* Controls Section - Mobile (below input) */}
+            {!isDesktop && (
+            <Row style={{ marginTop: '16px' }}>
+              <Col span={24}>
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'center', 
+                  alignItems: 'center',
+                  padding: '16px 0'
+                }}>
+                  <Space size="middle" wrap direction="vertical" style={{ width: '100%' }}>
+                    <div style={{ width: '100%', textAlign: 'center' }}>
+                      <Text strong style={{ fontSize: '14px', marginBottom: '8px', display: 'block', color: '#1890ff' }}>Action Type</Text>
+                      <Select 
+                        value={actionType}
+                        onChange={setActionType}
+                        style={{ width: '100%', maxWidth: '200px', fontWeight: 'bold' }}
+                        size="large"
+                        options={[
+                          { value: 'format', label: <span style={{ fontWeight: 'bold' }}>Format</span> },
+                          { value: 'convert', label: <span style={{ fontWeight: 'bold' }}>Convert</span> },
+                          { value: 'query', label: <span style={{ fontWeight: 'bold' }}>Query</span> }
+                        ]}
+                      />
+                    </div>
+                    {actionType === 'convert' && (
+                      <div style={{ width: '100%', textAlign: 'center' }}>
+                        <Text strong style={{ fontSize: '14px', marginBottom: '8px', display: 'block', color: '#1890ff' }}>Output Format</Text>
+                        <Select 
+                          value={outputFormat}
+                          onChange={setOutputFormat}
+                          style={{ width: '100%', maxWidth: '200px', fontWeight: 'bold' }}
+                          size="large"
+                          options={[
+                            { value: 'xml', label: <span style={{ fontWeight: 'bold' }}>XML</span> },
+                            { value: 'csv', label: <span style={{ fontWeight: 'bold' }}>CSV</span> },
+                            { value: 'yaml', label: <span style={{ fontWeight: 'bold' }}>YAML</span> }
+                          ]}
+                        />
+                      </div>
+                    )}
+                    {actionType === 'query' && (
+                      <div style={{ width: '100%', textAlign: 'center' }}>
+                        <Text strong style={{ fontSize: '14px', marginBottom: '8px', display: 'block', color: '#1890ff' }}>JSONPath</Text>
+                        <Input
+                          id="jsonpath-input-mobile"
+                          name="jsonpath"
+                          placeholder="JSONPath (e.g., $.users[*].name)"
+                          value={jsonPath}
+                          onChange={(e) => setJsonPath(e.target.value)}
+                          style={{ width: '100%', maxWidth: '300px', fontWeight: 'bold' }}
+                          size="large"
+                          onPressEnter={handleAction}
+                          autoComplete="off"
+                        />
+                      </div>
                     )}
                     <Button 
                       type="primary" 
                       icon={<FormatPainterOutlined />}
                       onClick={handleAction}
                       loading={loading}
+                      size="large"
+                      style={{ fontWeight: 'bold', fontSize: '16px', height: '45px', minWidth: '150px' }}
                     >
                       {actionType === 'format' ? 'Format' : actionType === 'query' ? 'Query' : 'Convert'}
                     </Button>
                     <Button 
                       icon={<ClearOutlined />}
-                      onClick={handleClear}
+                      onClick={handleClearWithViews}
+                      size="large"
+                      style={{ fontWeight: 'bold', fontSize: '16px', height: '45px', minWidth: '150px' }}
                     >
                       Clear
                     </Button>
                   </Space>
-                }
-                style={{ height: '100%' }}
-              >
-                <div style={{ position: 'relative', height: '500px' }}>
-                  <Editor
-                    height="500px"
-                    language="json"
-                    value={inputJson}
-                    onChange={handleInputChange}
-                    theme="vs-dark"
-                    options={{
-                      lineNumbers: 'on',
-                      minimap: { enabled: false },
-                      scrollBeyondLastLine: false,
-                      fontSize: 14,
-                      automaticLayout: true,
-                      wordWrap: 'on',
-                      placeholder: 'Paste your JSON here...',
-                    }}
-                  />
-                  
                 </div>
-              </Card>
-            </Col>
-
-            {/* Output Section */}
-            <Col xs={24} lg={12}>
-              <Card 
-                title={
-                  actionType === 'query' 
-                    ? `Query Results${queryResultCount > 0 ? ` (${queryResultCount} match${queryResultCount !== 1 ? 'es' : ''})` : ''}`
-                    : `Output (${actionType === 'format' ? 'JSON' : outputFormat.toUpperCase()})`
-                }
-                extra={
-                  convertedOutput && (
-                    <Button 
-                      type="default"
-                      icon={<CopyOutlined />}
-                      onClick={handleCopy}
-                    >
-                      Copy
-                    </Button>
-                  )
-                }
-                style={{ height: '100%' }}
-              >
-                <Editor
-                  height="500px"
-                  language={getLanguageForFormat(actionType === 'format' || actionType === 'query' ? 'json' : outputFormat)}
-                  value={convertedOutput}
-                  theme="vs-dark"
-                  options={{
-                    readOnly: true,
-                    lineNumbers: 'on',
-                    minimap: { enabled: false },
-                    scrollBeyondLastLine: false,
-                    fontSize: 14,
-                    automaticLayout: true,
-                    wordWrap: 'on',
-                  }}
-                />
-              </Card>
-            </Col>
-        </Row>
+              </Col>
+            </Row>
+            )}
 
         {/* Floating Error Panel */}
         {error && errorVisible && (
@@ -682,26 +1077,49 @@ const JsonFormatter = () => {
           </div>
         )}
 
-        {/* Example Section */}
-        <Card title="Example JSON">
-                <Editor
-                  height="200px"
-                  language="json"
-                  value={exampleJson}
-                  theme="vs-dark"
-                  options={{
-                    readOnly: true,
-                    lineNumbers: 'on',
-                    minimap: { enabled: false },
-                    scrollBeyondLastLine: false,
-                    fontSize: 14,
-                    automaticLayout: true,
-                    wordWrap: 'on',
-                  }}
-                />
-          </Card>
+        {/* Example Section - Collapsible */}
+        <Collapse
+          items={[
+            {
+              key: '1',
+              label: <span style={{ fontSize: '16px', fontWeight: 500 }}>Example JSON</span>,
+              children: (
+                <div>
+                  <div style={{ marginBottom: '8px', display: 'flex', justifyContent: 'flex-end' }}>
+                    <Button
+                      type="default"
+                      icon={<CopyOutlined />}
+                      onClick={handleCopyExample}
+                      size="small"
+                    >
+                      Copy Example
+                    </Button>
+                  </div>
+                  <Editor
+                    height="200px"
+                    language="json"
+                    value={exampleJson}
+                    theme="vs-dark"
+                    options={{
+                      readOnly: true,
+                      lineNumbers: 'on',
+                      minimap: { enabled: false },
+                      scrollBeyondLastLine: false,
+                      fontSize: 14,
+                      automaticLayout: true,
+                      wordWrap: 'on',
+                    }}
+                  />
+                </div>
+              ),
+            },
+          ]}
+          defaultActiveKey={[]}
+          style={{ marginTop: '24px' }}
+        />
         </div>
       </Content>
+      <Footer />
     </Layout>
   );
 };
