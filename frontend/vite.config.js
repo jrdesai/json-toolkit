@@ -23,13 +23,11 @@ export default defineConfig({
     },
     // Optimize chunk size
     chunkSizeWarningLimit: 1000,
-    // Enable minification
-    minify: 'terser',
-    terserOptions: {
-      compress: {
-        drop_console: true, // Remove console.log in production
-        drop_debugger: true
-      }
+    // Enable minification (esbuild is faster and included with Vite)
+    minify: 'esbuild',
+    // Remove console.log in production
+    esbuild: {
+      drop: ['console', 'debugger']
     }
   },
   // Optimize dependencies
